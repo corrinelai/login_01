@@ -40,7 +40,7 @@ for filename in sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0]
                 if sender == user or receiver == user:
                     if sender == user:
                         amount = -amount  # 發送者金額為負
-                    print(f"{filename}: {sender} → {receiver} : {amount}")
+                   # print(f"{filename}: {sender} → {receiver} : {amount}")
 
 
 # 顯示該用戶的餘額
