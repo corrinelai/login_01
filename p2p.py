@@ -89,7 +89,7 @@ def check_chain(target_user):
     for i in range(1, len(block_files)):
         prev_path = os.path.join(LEDGER_DIR, block_files[i - 1])
         curr_path = os.path.join(LEDGER_DIR, block_files[i])
-        prev_hash = hashlib.sha256(open(prev_path, "rb").read()).hexdigest()
+        prev_hash = calculate_sha256(prev_path)
         with open(curr_path, "r") as f:
             lines = f.readlines()
         if lines[0].strip() != f"Sha256 of previous block: {prev_hash}":
@@ -139,7 +139,7 @@ def verify_local_chain():
     for i in range(1, len(block_files)):
         prev = os.path.join(LEDGER_DIR, block_files[i - 1])
         curr = os.path.join(LEDGER_DIR, block_files[i])
-        prev_hash = hashlib.sha256(open(prev, "rb").read()).hexdigest()
+        prev_hash = calculate_sha256(prev)
         with open(curr, "r") as f:
             lines = f.readlines()
             if lines[0].strip() != f"Sha256 of previous block: {prev_hash}":
@@ -162,19 +162,24 @@ class P2PNode:
 
     def _listen(self):
         while True:
-            data, addr = self.sock.recvfrom(1024)
+            data, addr = self.sock.recvfrom(65536)
             msg = data.decode().strip()
-            print(f"📩 Received: {msg} from {addr}")
+            print(f"📩 Received: {msg[:80]}... from {addr}")
             if msg == "CHECK_LAST_BLOCK":
                 latest = get_latest_block()
                 if latest:
                     block_path = os.path.join(LEDGER_DIR, latest)
                     sha256 = calculate_sha256(block_path)
                     self.sock.sendto(sha256.encode(), addr)
+            elif msg.startswith("SYNC_REQUEST"):
+                requester_ip, requester_port = msg.split()[1:3]
+                self._send_ledger((requester_ip, int(requester_port)))
+            elif msg.startswith("SEND_LEDGER"):
+                self._receive_ledger(msg)
 
     def _send_commands(self):
         while True:
-            command = input("Enter command (checkMoney, checkLog, transaction, checkChain, checkAllChains): ").strip().split()
+            command = input("Enter command: ").strip().split()
             if not command:
                 continue
             cmd = command[0]
@@ -195,8 +200,32 @@ class P2PNode:
                 check_chain(command[1])
             elif cmd == "checkAllChains" and len(command) == 2:
                 self.check_all_chains(command[1])
+            elif cmd == "syncLedger":
+                for peer in self.peers:
+                    msg = f"SYNC_REQUEST {self.ip} {self.port}"
+                    self.sock.sendto(msg.encode(), peer)
+                print("🛰 Sync request sent to peers.")
             else:
                 print("Invalid command.")
+
+    def _send_ledger(self, target):
+        for filename in sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0])):
+            path = os.path.join(LEDGER_DIR, filename)
+            with open(path, "r") as f:
+                content = f.read()
+            msg = f"SEND_LEDGER {filename}|||{content}"
+            self.sock.sendto(msg.encode(), target)
+
+    def _receive_ledger(self, msg):
+        parts = msg[len("SEND_LEDGER "):].split("|||")
+        if len(parts) != 2:
+            print("Invalid ledger format")
+            return
+        filename, content = parts
+        path = os.path.join(LEDGER_DIR, filename)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"📥 Synced block: {filename}")
 
     def check_all_chains(self, target_user):
         def handle_response(data, addr):
@@ -240,15 +269,12 @@ class P2PNode:
             print("❌ Local chain verification failed.")
         reward_initiator(target_user)
 
-# ========= Main（這裡改對應 client 的 IP 和 PORT） =========
+# ========= Main =========
 
 if __name__ == "__main__":
-    my_ip = "172.28.0.2"        # client1 IP
-    my_port = 8001              # client1 Port
-    peers = [                   # 其他節點
-        ("172.28.0.3", 8002),
-        ("172.28.0.4", 8003)
-    ]
+    my_ip = "172.28.0.2"  # client1
+    my_port = 8001
+    peers = [("172.28.0.3", 8002), ("172.28.0.4", 8003)]
 
     ensure_ledger_dir()
     node = P2PNode(ip=my_ip, port=my_port, peers=peers)
