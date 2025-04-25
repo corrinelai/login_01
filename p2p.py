@@ -11,6 +11,8 @@ USERS = ["A", "B", "C"]
 RECEIVED_HASHES = {}
 LOCK = threading.Lock()
 
+# ========= 帳本處理 =========
+
 def ensure_ledger_dir():
     if not os.path.exists(LEDGER_DIR):
         os.makedirs(LEDGER_DIR)
@@ -144,18 +146,17 @@ def verify_local_chain():
                 return False
     return True
 
-class P2PNode:
-    def __init__(self):
-        self.ip = os.environ.get("MY_IP", "0.0.0.0")
-        self.port = int(os.environ.get("MY_PORT", "8001"))
-        peers_env = os.environ.get("MY_PEERS", "")
-        self.peers = [tuple(p.split(":")) for p in peers_env.split(",") if p]
-        self.peers = [(ip, int(port)) for ip, port in self.peers]
+# ========= P2P Node =========
 
+class P2PNode:
+    def __init__(self, ip, port, peers):
+        self.ip = ip
+        self.port = port
+        self.peers = peers
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind((self.ip, self.port))
 
     def start(self):
+        self.sock.bind((self.ip, self.port))
         threading.Thread(target=self._listen, daemon=True).start()
         threading.Thread(target=self._send_commands, daemon=True).start()
 
@@ -173,7 +174,7 @@ class P2PNode:
 
     def _send_commands(self):
         while True:
-            command = input("Enter a command (checkMoney, checkLog, transaction, checkChain, checkAllChains): ").strip().split()
+            command = input("Enter command (checkMoney, checkLog, transaction, checkChain, checkAllChains): ").strip().split()
             if not command:
                 continue
             cmd = command[0]
@@ -211,7 +212,7 @@ class P2PNode:
 
         def listen():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.bind(("0.0.0.0", 8002))  # 所有節點回傳到此 port
+            sock.bind(("0.0.0.0", 8002))
             sock.settimeout(2)
             print("🕓 Waiting for responses on UDP 8002 (up to 10s)...")
             start = time.time()
@@ -239,9 +240,18 @@ class P2PNode:
             print("❌ Local chain verification failed.")
         reward_initiator(target_user)
 
+# ========= Main（這裡改對應 client 的 IP 和 PORT） =========
+
 if __name__ == "__main__":
+    my_ip = "172.28.0.2"        # client1 IP
+    my_port = 8001              # client1 Port
+    peers = [                   # 其他節點
+        ("172.28.0.3", 8002),
+        ("172.28.0.4", 8003)
+    ]
+
     ensure_ledger_dir()
-    node = P2PNode()
+    node = P2PNode(ip=my_ip, port=my_port, peers=peers)
     node.start()
     while True:
         pass
