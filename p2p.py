@@ -254,11 +254,11 @@ class P2PNode:
         reward_initiator(target_user, self)
 
 if __name__ == "__main__":
-    my_ip = "172.17.0.2"
+    my_ip = "0.0.0.0"
     my_port = 8001
     peers = [
-        ("172.17.0.3", 8002),
-        ("172.17.0.4", 8003)
+        ("172.27.0.3", 8002),
+        ("172.27.0.4", 8003)
     ]
     ensure_ledger_dir()
     node = P2PNode(ip=my_ip, port=my_port, peers=peers)
