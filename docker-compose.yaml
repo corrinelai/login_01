@@ -1,0 +1,51 @@
+version: '3.9'
+
+services:
+  node1:
+    build: .
+    container_name: node1
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./storage/node1:/app/storage
+    environment:
+      - NODE_PORT=8001
+      - PEERS=172.20.0.2:8002,172.20.0.3:8003
+    networks:
+      p2pnet:
+        ipv4_address: 172.20.0.1
+
+  node2:
+    build: .
+    container_name: node2
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./storage/node2:/app/storage
+    environment:
+      - NODE_PORT=8002
+      - PEERS=172.20.0.1:8001,172.20.0.3:8003
+    networks:
+      p2pnet:
+        ipv4_address: 172.20.0.2
+
+  node3:
+    build: .
+    container_name: node3
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./storage/node3:/app/storage
+    environment:
+      - NODE_PORT=8003
+      - PEERS=172.20.0.1:8001,172.20.0.2:8002
+    networks:
+      p2pnet:
+        ipv4_address: 172.20.0.3
+
+networks:
+  p2pnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
