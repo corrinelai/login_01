@@ -152,7 +152,7 @@ class P2PNode:
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
     def start(self):
-        self.sock.bind((self.ip, self.port))
+        self.sock.bind(("0.0.0.0", self.port))
         threading.Thread(target=self._listen, daemon=True).start()
         threading.Thread(target=self._send_commands, daemon=True).start()
 
@@ -249,11 +249,11 @@ class P2PNode:
 # ========= Main =========
 
 if __name__ == "__main__":
-    my_ip = "172.28.0.2"        # client1 IP (或改成 client2 / client3)
+    my_ip = "172.17.0.2"        # client1 IP (或改成 client2 / client3)
     my_port = 8001
     peers = [
-        ("172.28.0.3", 8002),
-        ("172.28.0.4", 8003)
+        ("172.17.0.3", 8002),
+        ("172.17.0.4", 8003)
     ]
     ensure_ledger_dir()
     node = P2PNode(ip=my_ip, port=my_port, peers=peers)
