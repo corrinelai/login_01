@@ -130,7 +130,7 @@ def reward_initiator(user, node):
         with open(latest_path, "a") as f:
             f.write(f"angel, {user}, 100\n")
     print(f"✅ Verification complete. Rewarded angel → {user} : 100")
-    node.send_ledger_to_all_peers()
+    node.send_files_to_peers()
 
 def verify_local_chain():
     block_files = sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0]))
@@ -157,31 +157,38 @@ class P2PNode:
         threading.Thread(target=self._send_commands, daemon=True).start()
 
     def _listen(self):
+        buffered_name = ""
+        buffered_data = []
         while True:
             data, addr = self.sock.recvfrom(65535)
-            msg = data.decode().strip()
-            if msg.startswith("SEND_LEDGER"):
-                self._receive_ledger(msg)
+            msg = data.decode(errors="ignore").strip()
+            if msg.startswith("SEND_FILE"):
+                buffered_name = msg.split()[1]
+                buffered_data = []
+            elif buffered_name:
+                buffered_data.append(msg)
+                full_content = "\n".join(buffered_data)
+                self._receive_file(buffered_name, full_content)
+                buffered_name = ""
+                buffered_data = []
 
-    def _receive_ledger(self, msg):
-        parts = msg[len("SEND_LEDGER "):].split("|||", 1)
-        if len(parts) != 2:
-            print("❌ Invalid ledger format")
-            return
-        filename, content = parts
+    def _receive_file(self, filename, content):
+        ensure_ledger_dir()
         path = os.path.join(LEDGER_DIR, filename)
         with open(path, "w") as f:
             f.write(content)
-        print(f"📅 Received and saved block: {filename}")
+        print(f"📥 Received and saved {filename}")
 
-    def send_ledger_to_all_peers(self):
+    def send_files_to_peers(self):
         for filename in sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0])):
-            with open(os.path.join(LEDGER_DIR, filename), "r") as f:
+            path = os.path.join(LEDGER_DIR, filename)
+            with open(path, "r") as f:
                 content = f.read()
-            msg = f"SEND_LEDGER {filename}|||{content}"
             for peer in self.peers:
-                self.sock.sendto(msg.encode(), peer)
-                print(f"📢 Broadcasted {filename} to {peer}")
+                self.sock.sendto(f"SEND_FILE {filename}".encode(), peer)
+                time.sleep(0.05)
+                self.sock.sendto(content.encode(), peer)
+                print(f"📤 Broadcasted {filename} to {peer}")
 
     def _send_commands(self):
         while True:
@@ -195,11 +202,11 @@ class P2PNode:
                         s, r, a = generate_random_transaction()
                         add_transaction(s, r, a)
                         print(f"Random transaction: {s} → {r} : {a}")
-                    self.send_ledger_to_all_peers()
+                    self.send_files_to_peers()
                 elif len(command) == 4:
                     add_transaction(command[1], command[2], int(command[3]))
                     print(f"Transaction recorded: {command[1]} → {command[2]} : {command[3]}")
-                    self.send_ledger_to_all_peers()
+                    self.send_files_to_peers()
             elif cmd == "checkMoney" and len(command) == 2:
                 check_money(command[1])
             elif cmd == "checkLog" and len(command) == 2:
@@ -214,13 +221,13 @@ class P2PNode:
     def check_all_chains(self, target_user):
         def handle_response(data, addr):
             sender = f"{addr[0]}:{addr[1]}"
-            print(f"🔵 Received SHA256 from {sender}: {data.strip()}")
+            print(f"🟢 Received SHA256 from {sender}: {data.strip()}")
 
         def listen():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.bind(("0.0.0.0", 8002))
             sock.settimeout(2)
-            print("🕒 Waiting for responses on UDP 8002 (up to 10s)...")
+            print("🕓 Waiting for responses on UDP 8002 (up to 10s)...")
             start = time.time()
             try:
                 while time.time() - start < 10:
