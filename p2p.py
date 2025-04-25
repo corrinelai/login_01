@@ -1,5 +1,4 @@
 import os
-import sys
 import hashlib
 import random
 import socket
@@ -145,14 +144,16 @@ def verify_local_chain():
                 return False
     return True
 
-# ========== P2P Node + 共識邏輯 ==========
-
 class P2PNode:
-    def __init__(self, port, peers):
-        self.port = port
-        self.peers = peers
+    def __init__(self):
+        self.ip = os.environ.get("MY_IP", "0.0.0.0")
+        self.port = int(os.environ.get("MY_PORT", "8001"))
+        peers_env = os.environ.get("MY_PEERS", "")
+        self.peers = [tuple(p.split(":")) for p in peers_env.split(",") if p]
+        self.peers = [(ip, int(port)) for ip, port in self.peers]
+
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock.bind(('0.0.0.0', self.port))
+        self.sock.bind((self.ip, self.port))
 
     def start(self):
         threading.Thread(target=self._listen, daemon=True).start()
@@ -210,7 +211,7 @@ class P2PNode:
 
         def listen():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.bind(("0.0.0.0", 8002))
+            sock.bind(("0.0.0.0", 8002))  # 所有節點回傳到此 port
             sock.settimeout(2)
             print("🕓 Waiting for responses on UDP 8002 (up to 10s)...")
             start = time.time()
@@ -239,10 +240,8 @@ class P2PNode:
         reward_initiator(target_user)
 
 if __name__ == "__main__":
-    port = 8001
-    peers = [('172.17.0.2', 8002), ('172.17.0.3', 8002)]
     ensure_ledger_dir()
-    node = P2PNode(port, peers)
+    node = P2PNode()
     node.start()
     while True:
         pass
