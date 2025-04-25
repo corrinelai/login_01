@@ -172,7 +172,7 @@ class P2PNode:
         path = os.path.join(LEDGER_DIR, filename)
         with open(path, "w") as f:
             f.write(content)
-        print(f"📥 Received and saved block: {filename}")
+        print(f"📅 Received and saved block: {filename}")
 
     def send_ledger_to_all_peers(self):
         for filename in sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0])):
@@ -181,7 +181,7 @@ class P2PNode:
             msg = f"SEND_LEDGER {filename}|||{content}"
             for peer in self.peers:
                 self.sock.sendto(msg.encode(), peer)
-        print("📤 Broadcasted all ledger blocks to peers.")
+                print(f"📢 Broadcasted {filename} to {peer}")
 
     def _send_commands(self):
         while True:
@@ -214,13 +214,13 @@ class P2PNode:
     def check_all_chains(self, target_user):
         def handle_response(data, addr):
             sender = f"{addr[0]}:{addr[1]}"
-            print(f"🟢 Received SHA256 from {sender}: {data.strip()}")
+            print(f"🔵 Received SHA256 from {sender}: {data.strip()}")
 
         def listen():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.bind(("0.0.0.0", 8002))
             sock.settimeout(2)
-            print("🕓 Waiting for responses on UDP 8002 (up to 10s)...")
+            print("🕒 Waiting for responses on UDP 8002 (up to 10s)...")
             start = time.time()
             try:
                 while time.time() - start < 10:
@@ -246,10 +246,8 @@ class P2PNode:
             print("❌ Local chain verification failed.")
         reward_initiator(target_user, self)
 
-# ========= Main =========
-
 if __name__ == "__main__":
-    my_ip = "172.17.0.2"        # client1 IP (或改成 client2 / client3)
+    my_ip = "172.17.0.2"
     my_port = 8001
     peers = [
         ("172.17.0.3", 8002),
