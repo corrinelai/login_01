@@ -8,10 +8,7 @@ import time
 LEDGER_DIR = "./storage"
 MAX_TRANSACTIONS = 5
 USERS = ["A", "B", "C"]
-RECEIVED_HASHES = {}
 LOCK = threading.Lock()
-
-# ========= 帳本處理 =========
 
 def ensure_ledger_dir():
     if not os.path.exists(LEDGER_DIR):
@@ -89,7 +86,7 @@ def check_chain(target_user):
     for i in range(1, len(block_files)):
         prev_path = os.path.join(LEDGER_DIR, block_files[i - 1])
         curr_path = os.path.join(LEDGER_DIR, block_files[i])
-        prev_hash = calculate_sha256(prev_path)
+        prev_hash = hashlib.sha256(open(prev_path, "rb").read()).hexdigest()
         with open(curr_path, "r") as f:
             lines = f.readlines()
         if lines[0].strip() != f"Sha256 of previous block: {prev_hash}":
@@ -116,7 +113,7 @@ def check_chain(target_user):
     print("✅ Blockchain integrity OK")
     print(f"✅ angel → {target_user} : 10 已成功加入帳本")
 
-def reward_initiator(user):
+def reward_initiator(user, node):
     block_files = sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0]))
     latest_block = block_files[-1]
     latest_path = os.path.join(LEDGER_DIR, latest_block)
@@ -133,20 +130,19 @@ def reward_initiator(user):
         with open(latest_path, "a") as f:
             f.write(f"angel, {user}, 100\n")
     print(f"✅ Verification complete. Rewarded angel → {user} : 100")
+    node.send_ledger_to_all_peers()
 
 def verify_local_chain():
     block_files = sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0]))
     for i in range(1, len(block_files)):
         prev = os.path.join(LEDGER_DIR, block_files[i - 1])
         curr = os.path.join(LEDGER_DIR, block_files[i])
-        prev_hash = calculate_sha256(prev)
+        prev_hash = hashlib.sha256(open(prev, "rb").read()).hexdigest()
         with open(curr, "r") as f:
             lines = f.readlines()
             if lines[0].strip() != f"Sha256 of previous block: {prev_hash}":
                 return False
     return True
-
-# ========= P2P Node =========
 
 class P2PNode:
     def __init__(self, ip, port, peers):
@@ -162,24 +158,34 @@ class P2PNode:
 
     def _listen(self):
         while True:
-            data, addr = self.sock.recvfrom(65536)
+            data, addr = self.sock.recvfrom(65535)
             msg = data.decode().strip()
-            print(f"📩 Received: {msg[:80]}... from {addr}")
-            if msg == "CHECK_LAST_BLOCK":
-                latest = get_latest_block()
-                if latest:
-                    block_path = os.path.join(LEDGER_DIR, latest)
-                    sha256 = calculate_sha256(block_path)
-                    self.sock.sendto(sha256.encode(), addr)
-            elif msg.startswith("SYNC_REQUEST"):
-                requester_ip, requester_port = msg.split()[1:3]
-                self._send_ledger((requester_ip, int(requester_port)))
-            elif msg.startswith("SEND_LEDGER"):
+            if msg.startswith("SEND_LEDGER"):
                 self._receive_ledger(msg)
+
+    def _receive_ledger(self, msg):
+        parts = msg[len("SEND_LEDGER "):].split("|||", 1)
+        if len(parts) != 2:
+            print("❌ Invalid ledger format")
+            return
+        filename, content = parts
+        path = os.path.join(LEDGER_DIR, filename)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"📥 Received and saved block: {filename}")
+
+    def send_ledger_to_all_peers(self):
+        for filename in sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0])):
+            with open(os.path.join(LEDGER_DIR, filename), "r") as f:
+                content = f.read()
+            msg = f"SEND_LEDGER {filename}|||{content}"
+            for peer in self.peers:
+                self.sock.sendto(msg.encode(), peer)
+        print("📤 Broadcasted all ledger blocks to peers.")
 
     def _send_commands(self):
         while True:
-            command = input("Enter command: ").strip().split()
+            command = input("Enter command (checkMoney, checkLog, transaction, checkChain, checkAllChains): ").strip().split()
             if not command:
                 continue
             cmd = command[0]
@@ -189,9 +195,11 @@ class P2PNode:
                         s, r, a = generate_random_transaction()
                         add_transaction(s, r, a)
                         print(f"Random transaction: {s} → {r} : {a}")
+                    self.send_ledger_to_all_peers()
                 elif len(command) == 4:
                     add_transaction(command[1], command[2], int(command[3]))
                     print(f"Transaction recorded: {command[1]} → {command[2]} : {command[3]}")
+                    self.send_ledger_to_all_peers()
             elif cmd == "checkMoney" and len(command) == 2:
                 check_money(command[1])
             elif cmd == "checkLog" and len(command) == 2:
@@ -200,44 +208,13 @@ class P2PNode:
                 check_chain(command[1])
             elif cmd == "checkAllChains" and len(command) == 2:
                 self.check_all_chains(command[1])
-            elif cmd == "syncLedger":
-                for peer in self.peers:
-                    msg = f"SYNC_REQUEST {self.ip} {self.port}"
-                    self.sock.sendto(msg.encode(), peer)
-                print("🛰 Sync request sent to peers.")
             else:
                 print("Invalid command.")
-
-    def _send_ledger(self, target):
-        for filename in sorted(os.listdir(LEDGER_DIR), key=lambda x: int(x.split(".")[0])):
-            path = os.path.join(LEDGER_DIR, filename)
-            with open(path, "r") as f:
-                content = f.read()
-            msg = f"SEND_LEDGER {filename}|||{content}"
-            self.sock.sendto(msg.encode(), target)
-
-    def _receive_ledger(self, msg):
-        parts = msg[len("SEND_LEDGER "):].split("|||")
-        if len(parts) != 2:
-            print("Invalid ledger format")
-            return
-        filename, content = parts
-        path = os.path.join(LEDGER_DIR, filename)
-        with open(path, "w") as f:
-            f.write(content)
-        print(f"📥 Synced block: {filename}")
 
     def check_all_chains(self, target_user):
         def handle_response(data, addr):
             sender = f"{addr[0]}:{addr[1]}"
             print(f"🟢 Received SHA256 from {sender}: {data.strip()}")
-            with LOCK:
-                RECEIVED_HASHES[sender] = data.strip()
-            hashes = list(RECEIVED_HASHES.items())
-            for i in range(len(hashes)):
-                for j in range(i + 1, len(hashes)):
-                    result = "Yes" if hashes[i][1] == hashes[j][1] else "No"
-                    print(f"[Compare] {hashes[i][0]} vs {hashes[j][0]}: {result}")
 
         def listen():
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -267,15 +244,17 @@ class P2PNode:
             print("✅ Local chain is valid.")
         else:
             print("❌ Local chain verification failed.")
-        reward_initiator(target_user)
+        reward_initiator(target_user, self)
 
 # ========= Main =========
 
 if __name__ == "__main__":
-    my_ip = "172.28.0.2"  # client1
+    my_ip = "172.28.0.2"        # client1 IP (或改成 client2 / client3)
     my_port = 8001
-    peers = [("172.28.0.3", 8002), ("172.28.0.4", 8003)]
-
+    peers = [
+        ("172.28.0.3", 8002),
+        ("172.28.0.4", 8003)
+    ]
     ensure_ledger_dir()
     node = P2PNode(ip=my_ip, port=my_port, peers=peers)
     node.start()
